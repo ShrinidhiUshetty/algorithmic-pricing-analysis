@@ -1,16 +1,18 @@
 
-
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 
-# Page configuration
+# --------------------------------------------------
+# Page Configuration
+# --------------------------------------------------
+
 st.set_page_config(
     page_title="Algorithmic Pricing Analysis",
     page_icon="📊",
     layout="wide"
 )
 
-# Dashboard title
 st.title("📊 Algorithmic Pricing Analysis")
 st.subheader("Causal Inference & Synthetic Control Engine")
 
@@ -20,7 +22,10 @@ st.info(
     "the impact of price changes on sales."
 )
 
-# Sidebar navigation
+# --------------------------------------------------
+# Sidebar Navigation
+# --------------------------------------------------
+
 st.sidebar.title("Navigation")
 
 page = st.sidebar.radio(
@@ -34,15 +39,32 @@ page = st.sidebar.radio(
     ]
 )
 
-# Load simulated dataset
+# --------------------------------------------------
+# Load Data
+# --------------------------------------------------
+
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/regional_sales_simulated.csv")
+    df = pd.read_csv(
+        "data/regional_sales_simulated.csv"
+    )
     df["Date"] = pd.to_datetime(df["Date"])
     return df
 
 
+@st.cache_data
+def load_synthetic_data():
+    df = pd.read_csv(
+        "data/synthetic_control_results.csv"
+    )
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df
+
+
+# --------------------------------------------------
 # Page 1: Project Overview
+# --------------------------------------------------
+
 if page == "Project Overview":
 
     st.header("Project Overview")
@@ -55,31 +77,32 @@ if page == "Project Overview":
 
     st.markdown("### Project Objectives")
 
-    st.write(
-        "1. Explore Amazon sales and pricing patterns."
-    )
-    st.write(
-        "2. Analyze the relationship between price and sales."
-    )
-    st.write(
-        "3. Implement Difference-in-Differences (DiD)."
-    )
-    st.write(
-        "4. Develop a Synthetic Control model."
-    )
-    st.write(
-        "5. Evaluate pricing interventions and model robustness."
-    )
+    st.write("1. Explore Amazon sales and pricing patterns.")
+    st.write("2. Analyze the relationship between price and sales.")
+    st.write("3. Implement Difference-in-Differences (DiD).")
+    st.write("4. Develop a Synthetic Control model.")
+    st.write("5. Evaluate pricing interventions and model robustness.")
 
     st.markdown("### Technologies Used")
 
     st.write(
-        "Python, Pandas, NumPy, Matplotlib, SciPy, "
+        "Python, Pandas, NumPy, Matplotlib, Plotly, SciPy, "
         "Scikit-learn, Google Colab, GitHub and Streamlit."
     )
 
+    st.markdown("### Project Workflow")
 
+    st.write(
+        "Data Cleaning → EDA → Causal Modeling → "
+        "Synthetic Control → Model Validation → "
+        "Pricing Insights → Dashboard"
+    )
+
+
+# --------------------------------------------------
 # Page 2: Exploratory Data Analysis
+# --------------------------------------------------
+
 elif page == "Exploratory Data Analysis":
 
     st.header("Exploratory Data Analysis")
@@ -96,11 +119,15 @@ elif page == "Exploratory Data Analysis":
     )
 
     st.info(
-        "Amazon EDA charts will be added in the next stage."
+        "Amazon EDA visualizations will be added "
+        "in the next stage."
     )
 
 
+# --------------------------------------------------
 # Page 3: Causal Inference
+# --------------------------------------------------
+
 elif page == "Causal Inference":
 
     st.header("Causal Inference Results")
@@ -120,6 +147,7 @@ elif page == "Causal Inference":
     with col3:
         st.metric("Days", df["Date"].nunique())
 
+    # Regional Sales Chart
     st.markdown("### Regional Sales Trends")
 
     selected_regions = st.multiselect(
@@ -152,11 +180,108 @@ elif page == "Causal Inference":
     )
 
     st.markdown("### Regional Sales Data")
-
     st.dataframe(df, use_container_width=True)
 
+    # --------------------------------------------------
+    # Actual vs Synthetic Bengaluru
+    # --------------------------------------------------
 
+    st.divider()
+
+    st.markdown("### Actual vs Synthetic Bengaluru Sales")
+
+    synthetic_df = load_synthetic_data()
+
+    intervention_date = pd.Timestamp("2024-01-31")
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=synthetic_df["Date"],
+            y=synthetic_df["Bengaluru"],
+            mode="lines",
+            name="Actual Bengaluru",
+            line=dict(color="#2563eb", width=3)
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=synthetic_df["Date"],
+            y=synthetic_df["Synthetic_Bengaluru"],
+            mode="lines",
+            name="Synthetic Bengaluru",
+            line=dict(color="#f97316", width=3, dash="dash")
+        )
+    )
+
+    fig.add_vline(
+        x=intervention_date.timestamp() * 1000,
+        line_dash="dot",
+        line_color="red",
+        annotation_text="Price Intervention",
+        annotation_position="top left"
+    )
+
+    fig.update_layout(
+        title="Actual vs Counterfactual Sales",
+        xaxis_title="Date",
+        yaxis_title="Daily Sales (Units)",
+        hovermode="x unified",
+        legend_title="Sales Series"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --------------------------------------------------
+    # Treatment Effect Calculations
+    # --------------------------------------------------
+
+    post_data = synthetic_df[
+        synthetic_df["Date"] >= intervention_date
+    ].copy()
+
+    post_data["TreatmentEffect"] = (
+        post_data["Bengaluru"]
+        - post_data["Synthetic_Bengaluru"]
+    )
+
+    average_effect = post_data["TreatmentEffect"].mean()
+    total_effect = post_data["TreatmentEffect"].sum()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "Average Daily Sales Uplift",
+            f"{average_effect:.2f} units"
+        )
+
+    with col2:
+        st.metric(
+            "Total Additional Sales",
+            f"{total_effect:.2f} units"
+        )
+
+    st.success(
+        "The Synthetic Control model estimates the "
+        "additional sales associated with the simulated "
+        "10% price reduction in Bengaluru."
+    )
+
+    st.caption(
+        "Intervention date: January 31, 2024. "
+        "Synthetic Bengaluru represents estimated "
+        "sales without the price intervention. "
+        "Results depend on the simulation and model assumptions."
+    )
+
+
+# --------------------------------------------------
 # Page 4: Model Validation
+# --------------------------------------------------
+
 elif page == "Model Validation":
 
     st.header("Model Validation")
@@ -173,7 +298,10 @@ elif page == "Model Validation":
     )
 
 
+# --------------------------------------------------
 # Page 5: Pricing Insights
+# --------------------------------------------------
+
 elif page == "Pricing Insights":
 
     st.header("Pricing and Business Insights")
@@ -189,11 +317,18 @@ elif page == "Pricing Insights":
     )
 
 
+# --------------------------------------------------
 # Footer
+# --------------------------------------------------
+
 st.divider()
 
 st.caption(
     "Algorithmic Pricing Analysis | "
+    "Data Analytics Project | "
+    "Causal results use simulated data."
+)
+
     "Data Analytics Project | "
     "Causal results use simulated data."
 )
