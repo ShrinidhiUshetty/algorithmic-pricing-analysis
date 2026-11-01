@@ -321,6 +321,7 @@ elif page == "Pricing Insights":
 # Footer
 # --------------------------------------------------
 
+
 st.divider()
 
 st.caption(
@@ -329,7 +330,4 @@ st.caption(
     "Causal results use simulated data."
 )
 
-    "Data Analytics Project | "
-    "Causal results use simulated data."
-)
 
