@@ -45,18 +45,14 @@ page = st.sidebar.radio(
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(
-        "data/regional_sales_simulated.csv"
-    )
+    df = pd.read_csv("data/regional_sales_simulated.csv")
     df["Date"] = pd.to_datetime(df["Date"])
     return df
 
 
 @st.cache_data
 def load_synthetic_data():
-    df = pd.read_csv(
-        "data/synthetic_control_results.csv"
-    )
+    df = pd.read_csv("data/synthetic_control_results.csv")
     df["Date"] = pd.to_datetime(df["Date"])
     return df
 
@@ -133,6 +129,9 @@ elif page == "Causal Inference":
     st.header("Causal Inference Results")
 
     df = load_data()
+    synthetic_df = load_synthetic_data()
+
+    intervention_date = pd.Timestamp("2024-01-31")
 
     st.markdown("### Simulated Dataset Overview")
 
@@ -158,9 +157,7 @@ elif page == "Causal Inference":
 
     if selected_regions:
 
-        filtered_df = df[
-            df["Region"].isin(selected_regions)
-        ]
+        filtered_df = df[df["Region"].isin(selected_regions)]
 
         chart_data = filtered_df.pivot(
             index="Date",
@@ -189,10 +186,6 @@ elif page == "Causal Inference":
     st.divider()
 
     st.markdown("### Actual vs Synthetic Bengaluru Sales")
-
-    synthetic_df = load_synthetic_data()
-
-    intervention_date = pd.Timestamp("2024-01-31")
 
     fig = go.Figure()
 
@@ -264,17 +257,73 @@ elif page == "Causal Inference":
             f"{total_effect:.2f} units"
         )
 
-    st.success(
+    st.caption(
         "The Synthetic Control model estimates the "
-        "additional sales associated with the simulated "
+        "sales difference associated with the simulated "
         "10% price reduction in Bengaluru."
     )
 
+    # --------------------------------------------------
+    # NEW: Daily Treatment Effect Chart
+    # --------------------------------------------------
+
+    st.divider()
+
+    st.markdown("### Daily Treatment Effect")
+
+    st.write(
+        "This chart shows the estimated additional "
+        "sales for each day after the pricing intervention."
+    )
+
+    effect_fig = go.Figure()
+
+    effect_fig.add_trace(
+        go.Bar(
+            x=post_data["Date"],
+            y=post_data["TreatmentEffect"],
+            name="Daily Treatment Effect",
+            marker_color="#16a34a"
+        )
+    )
+
+    effect_fig.add_hline(
+        y=average_effect,
+        line_dash="dash",
+        line_color="#f97316",
+        annotation_text=f"Average Effect: {average_effect:.2f}"
+    )
+
+    effect_fig.add_hline(
+        y=0,
+        line_color="gray",
+        line_width=1
+    )
+
+    effect_fig.update_layout(
+        title="Estimated Daily Sales Uplift",
+        xaxis_title="Date",
+        yaxis_title="Additional Sales (Units)",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(effect_fig, use_container_width=True)
+
+    st.markdown("### Daily Treatment Effect Data")
+
+    st.dataframe(
+        post_data[
+            ["Date", "Bengaluru",
+             "Synthetic_Bengaluru", "TreatmentEffect"]
+        ],
+        use_container_width=True
+    )
+
     st.caption(
-        "Intervention date: January 31, 2024. "
-        "Synthetic Bengaluru represents estimated "
-        "sales without the price intervention. "
-        "Results depend on the simulation and model assumptions."
+        "Treatment Effect = Actual Bengaluru Sales "
+        "- Synthetic Bengaluru Sales. "
+        "These estimates are based on simulated data "
+        "and depend on model assumptions."
     )
 
 
@@ -321,7 +370,6 @@ elif page == "Pricing Insights":
 # Footer
 # --------------------------------------------------
 
-
 st.divider()
 
 st.caption(
@@ -329,5 +377,3 @@ st.caption(
     "Data Analytics Project | "
     "Causal results use simulated data."
 )
-
-
