@@ -42,3 +42,14 @@ algorithmic-pricing-analysis-streamlit/
     ├── regional_sales_simulated.csv
     └── synthetic_control_results.csv
 ```
+
+## Project Progress
+
+- Completed exploratory data analysis (EDA).
+- Implemented Difference-in-Differences (DiD).
+- Developed the Synthetic Control model.
+- Performed placebo tests and sensitivity analysis.
+- Created and deployed an interactive Streamlit dashboard.
+- Added visualizations for regional sales trends and treatment effects.
+
+Note: Causal inference results are based on simulated data.
