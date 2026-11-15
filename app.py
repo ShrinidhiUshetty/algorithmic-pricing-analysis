@@ -94,6 +94,70 @@ post_sc = sc_view[sc_view["Date"] >= intervention_date]
 pre_sc = sc_view[sc_view["Date"] < intervention_date]
 
 st.title("Algorithmic Pricing Analysis")
+st.caption("Regional sales • Price-performance analysis • Synthetic control evaluation")
+
+# ------------------------------------------------------------
+# Executive Overview
+# ------------------------------------------------------------
+if page == "Executive Overview":
+    st.subheader("Executive overview")
+    total_sales = filtered["Sales"].sum() if not filtered.empty else 0
+    avg_price = filtered["Price"].mean() if not filtered.empty else np.nan
+    avg_daily = filtered.groupby("Date")["Sales"].sum().mean() if not filtered.empty else 0
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Sales volume", f"{total_sales:,.0f} units")
+    c2.metric("Average selling price", f"₹{avg_price:,.2f}" if pd.notna(avg_price) else "—")
+    c3.metric("Average daily sales", f"{avg_daily:,.1f} units/day")
+    c4.metric("Regions in view", f"{filtered['Region'].nunique() if not filtered.empty else 0}")
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### Daily sales trend")
+        if not filtered.empty:
+            daily = filtered.groupby(["Date", "Region"], as_index=False)["Sales"].sum()
+            fig = px.line(daily, x="Date", y="Sales", color="Region", markers=True)
+            fig.update_layout(xaxis_title="", yaxis_title="Units sold", legend_title="")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            empty_warning("No rows match the selected filters.")
+    with right:
+        st.markdown("#### Sales by region")
+        if not filtered.empty:
+            summary = filtered.groupby("Region", as_index=False).agg(
+                Sales=("Sales", "sum"), Avg_Price=("Price", "mean"))
+            fig = px.bar(summary.sort_values("Sales", ascending=True), x="Sales", y="Region",
+                         orientation="h", color="Region", text_auto=".3s")
+            fig.update_layout(showlegend=False, xaxis_title="Total units sold", yaxis_title="")
+            st.plotly_chart(fig, use_container_width=True)
+    st.markdown("#### Synthetic-control headline result")
+    if not post_sc.empty:
+        avg_effect = post_sc["Effect"].mean()
+        total_effect = post_sc["Effect"].sum()
+        a, b, c = st.columns(3)
+        a.metric("Average post-period gap", f"{avg_effect:+.2f} units/day")
+        b.metric("Cumulative post-period gap", f"{total_effect:+.1f} units")
+        c.metric("Post-period days", f"{len(post_sc)}")
+        st.caption("Gap = actual Bengaluru sales − synthetic Bengaluru sales. This is a model-based estimate on simulated data, not proof of causality.")
+    else:
+        st.info("The selected period contains no post-intervention dates.")
+
+# ------------------------------------------------------------
+# EDA
+# ------------------------------------------------------------
+elif page == "Exploratory Analysis":
+    st.subheader("Exploratory data analysis")
+    if filtered.empty:
+        empty_warning("No data available for the selected filters.")
+    else:
+        a, b, c = st.columns(3)
+        a.metric("Rows", f"{len(filtered):,}")
+        b.metric("Unique dates", f"{filtered['Date'].nunique():,}")
+        c.metric("Products / regions", f"{filtered['Region'].nunique():,} regions")
+        monthly = make_monthly(filtered)
+        l, r = st.columns(2)
+        with l:
+            st.markdown("#### Daily sales by region")
+            daily = filtered.groupby(["Date", "Region"], as_index=False)["Sales"].sum()
             fig = px.line(daily, x="Date", y="Sales", color="Region")
             st.plotly_chart(fig, use_container_width=True)
         with r:
@@ -169,7 +233,124 @@ elif page == "Causal Impact":
                      use_container_width=True, hide_index=True)
         st.download_button("Download impact data", sc_view.to_csv(index=False).encode("utf-8"),
                            "synthetic_control_impact.csv", "text/csv")
-        # ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# Diagnostics
+# ------------------------------------------------------------
+elif page == "Model Diagnostics":
+    st.subheader("Model validation and diagnostics")
+    st.caption("All results use simulated data. The default intervention date is January 31, 2024.")
+    if sc_view.empty:
+        empty_warning("No observations in the selected date range.")
+    else:
+        pre = sc_view[sc_view["Date"] < intervention_date].copy()
+        post = sc_view[sc_view["Date"] >= intervention_date].copy()
+
+        def errors(part):
+            residual = part["Effect"]
+            return {
+                "Observations": len(residual),
+                "MAE": residual.abs().mean(),
+                "RMSE": np.sqrt((residual ** 2).mean()),
+                "Mean residual": residual.mean(),
+            }
+
+        pre_m, post_m = errors(pre), errors(post)
+        cols = st.columns(4)
+        cols[0].metric("Pre-period RMSE", f"{pre_m['RMSE']:.2f}" if len(pre) else "—")
+        cols[1].metric("Pre-period MAE", f"{pre_m['MAE']:.2f}" if len(pre) else "—")
+        cols[2].metric("Post-period RMSE", f"{post_m['RMSE']:.2f}" if len(post) else "—")
+        cols[3].metric("Post-period MAE", f"{post_m['MAE']:.2f}" if len(post) else "—")
+
+        st.markdown("#### Actual versus synthetic: model fit")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=sc_view["Date"], y=sc_view["Bengaluru"],
+                                 name="Actual Bengaluru", mode="lines"))
+        fig.add_trace(go.Scatter(x=sc_view["Date"], y=sc_view["Synthetic_Bengaluru"],
+                                 name="Synthetic Bengaluru", mode="lines",
+                                 line=dict(dash="dash")))
+        fig.add_vline(x=intervention_date.timestamp() * 1000,
+                      line_dash="dot", line_color="red")
+        fig.update_layout(xaxis_title="Date", yaxis_title="Daily sales (units)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Residuals: actual minus synthetic")
+        residual_fig = px.line(sc_view, x="Date", y="Effect", markers=True)
+        residual_fig.add_hline(y=0, line_color="gray")
+        residual_fig.add_vline(x=intervention_date.timestamp() * 1000,
+                               line_dash="dot", line_color="red")
+        residual_fig.update_layout(yaxis_title="Sales gap (units)")
+        st.plotly_chart(residual_fig, use_container_width=True)
+        st.dataframe(pd.DataFrame([{"Period": "Before intervention", **pre_m},
+                                   {"Period": "After intervention", **post_m}]),
+                     hide_index=True, use_container_width=True)
+
+        st.markdown("#### Difference-in-Differences versus Synthetic Control")
+        regional_period = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)].copy()
+        regional_period["Period"] = np.where(regional_period["Date"] >= intervention_date,
+                                             "Post", "Pre")
+        means = regional_period.groupby(["Region", "Period"])["Sales"].mean().unstack()
+        if ("Bengaluru" in means.index and {"Pre", "Post"}.issubset(means.columns)
+                and "Hyderabad" in means.index
+                and means.loc[["Bengaluru", "Hyderabad"], ["Pre", "Post"]].notna().all().all()
+                and not post.empty):
+            treated_change = means.loc["Bengaluru", "Post"] - means.loc["Bengaluru", "Pre"]
+            control_change = means.loc["Hyderabad", "Post"] - means.loc["Hyderabad", "Pre"]
+            did_effect = treated_change - control_change
+            synthetic_effect = post["Effect"].mean()
+            method_df = pd.DataFrame({"Method": ["DiD (Hyderabad control)", "Synthetic Control"],
+                                      "Estimated uplift": [did_effect, synthetic_effect]})
+            compare_fig = px.bar(method_df, x="Method", y="Estimated uplift",
+                                 color="Method", text_auto=".2f")
+            compare_fig.update_layout(showlegend=False, yaxis_title="Additional units/day")
+            st.plotly_chart(compare_fig, use_container_width=True)
+            st.caption("DiD uses Hyderabad as its comparison region. Synthetic Control uses the saved counterfactual series. Neither estimate establishes causality without assumptions.")
+        else:
+            st.info("Select a date range with pre- and post-intervention data to compare DiD and Synthetic Control.")
+
+        st.markdown("#### Temporal placebo checks")
+        st.write("Fake intervention dates within the real pre-intervention period test whether similar gaps appear without the programmed price change.")
+        fake_dates = pd.to_datetime(["2024-01-08", "2024-01-12", "2024-01-16",
+                                     "2024-01-20", "2024-01-24"])
+        placebo_rows = []
+        # Use the fixed, saved counterfactual series; no model is refitted here.
+        for fake_date in fake_dates:
+            before = pre.loc[pre["Date"] < fake_date, "Effect"]
+            after = pre.loc[pre["Date"] >= fake_date, "Effect"]
+            if len(before) >= 2 and len(after) >= 2:
+                placebo_rows.append({"Fake date": fake_date.strftime("%b %d"),
+                                     "Gap change": after.mean() - before.mean()})
+        if placebo_rows:
+            placebo_df = pd.DataFrame(placebo_rows)
+            placebo_fig = px.bar(placebo_df, x="Fake date", y="Gap change",
+                                 text_auto=".2f")
+            placebo_fig.add_hline(y=0, line_color="gray")
+            if not post.empty:
+                placebo_fig.add_hline(y=post["Effect"].mean(), line_dash="dash",
+                                      line_color="green",
+                                      annotation_text="Actual post-period mean gap")
+            placebo_fig.update_layout(yaxis_title="Change in mean residual (units/day)")
+            st.plotly_chart(placebo_fig, use_container_width=True)
+            st.caption("Temporal placebos are descriptive checks using the existing fitted synthetic series, not formal significance tests.")
+        else:
+            st.info("The selected pre-intervention period is too short for the fake-date checks.")
+
+        st.markdown("#### Training-window sensitivity (notebook results)")
+        st.write("These are previously reported results from the notebook, not recalculated when sidebar filters change.")
+        sensitivity = pd.DataFrame({"Training days": [15, 20, 25, 30],
+                                    "Estimated uplift": [21.02, 21.24, 20.35, 20.33]})
+        sensitivity_fig = px.line(sensitivity, x="Training days", y="Estimated uplift",
+                                  markers=True)
+        sensitivity_fig.add_hline(y=20, line_dash="dash", line_color="gray",
+                                  annotation_text="Programmed effect: 20")
+        sensitivity_fig.update_layout(yaxis_title="Estimated additional units/day")
+        st.plotly_chart(sensitivity_fig, use_container_width=True)
+        st.dataframe(sensitivity, hide_index=True, use_container_width=True)
+        st.warning("Validation checks support the simulated model's plausibility but do not prove a causal effect in real-world sales data.")
+
+# ------------------------------------------------------------
+# Pricing insights
+# ------------------------------------------------------------
 elif page == "Pricing Insights":
     st.subheader("Pricing and commercial insights")
     st.write("These are descriptive signals from the supplied regional panel and synthetic-control output.")
@@ -270,9 +451,3 @@ elif page == "Data Explorer":
 
 st.divider()
 st.caption("Algorithmic Pricing Analysis | Built with Streamlit and Plotly | Source: supplied simulated project datasets")
-
-
-
-
-
-
